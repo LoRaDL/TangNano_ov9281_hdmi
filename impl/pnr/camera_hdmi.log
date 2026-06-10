@@ -1,0 +1,32 @@
+Reading netlist file: "/home/lora/proj/FPGAExample/camera_hdmi/impl/gwsynthesis/camera_hdmi.vg"
+Parsing netlist file "/home/lora/proj/FPGAExample/camera_hdmi/impl/gwsynthesis/camera_hdmi.vg" completed
+Processing netlist completed
+Reading constraint file: "/home/lora/proj/FPGAExample/camera_hdmi/src/camera_hdmi.cst"
+Physical Constraint parsed completed
+Running placement......
+[10%] Placement Phase 0 completed
+[20%] Placement Phase 1 completed
+[30%] Placement Phase 2 completed
+WARN  (TA1132) :  'cam_pclk' was determined to be a clock but was not created.
+WARN  (TA1132) :  'u_div_5/clkdiv_inst/CLKOUT.default_gen_clk' was determined to be a clock but was not created.
+[50%] Placement Phase 3 completed
+Running routing......
+[60%] Routing Phase 0 completed
+[70%] Routing Phase 1 completed
+[80%] Routing Phase 2 completed
+WARN  (PR1014) : Generic routing resource will be used to clock signal 'cam_pclk_d' by the specified constraint. And then it may lead to the excessive delay or skew
+[90%] Routing Phase 3 completed
+Running timing analysis......
+[95%] Timing analysis completed
+Placement and routing completed
+Bitstream generation in progress......
+Bitstream generation completed
+Running power analysis......
+[100%] Power analysis completed
+Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.power.html" completed
+Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.pin.html" completed
+Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.rpt.html" completed
+Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.rpt.txt" completed
+Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.tr.html" completed
+Sun Jun  7 03:49:01 2026
+
