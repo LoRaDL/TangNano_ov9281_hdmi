@@ -9,7 +9,15 @@
   "SubInsts" : [
    {
     "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-    "InstLine" : 783,
+    "InstLine" : 797,
+    "InstName" : "psram_inst",
+    "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/psram_memory_interface_hs/psram_memory_interface_hs.v",
+    "ModuleLine" : 9,
+    "ModuleName" : "PSRAM_Memory_Interface_HS_Top"
+   },
+   {
+    "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
+    "InstLine" : 1271,
     "InstName" : "u_pll",
     "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/gowin_rpll/gowin_rpll.v",
     "ModuleLine" : 9,
@@ -17,7 +25,7 @@
    },
    {
     "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-    "InstLine" : 789,
+    "InstLine" : 1277,
     "InstName" : "u_div_5",
     "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/gowin_clkdiv/gowin_clkdiv.v",
     "ModuleLine" : 9,
@@ -25,15 +33,15 @@
    },
    {
     "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-    "InstLine" : 795,
+    "InstLine" : 1283,
     "InstName" : "u_Reset_Sync",
     "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-    "ModuleLine" : 828,
+    "ModuleLine" : 1321,
     "ModuleName" : "Reset_Sync"
    },
    {
     "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-    "InstLine" : 802,
+    "InstLine" : 1291,
     "InstName" : "svo_hdmi_inst",
     "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
     "ModuleLine" : 23,
@@ -41,7 +49,7 @@
     "SubInsts" : [
      {
       "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
-      "InstLine" : 79,
+      "InstLine" : 83,
       "InstName" : "cam_display_inst",
       "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/cam_display.v",
       "ModuleLine" : 3,
@@ -49,7 +57,7 @@
      },
      {
       "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
-      "InstLine" : 95,
+      "InstLine" : 102,
       "InstName" : "svo_enc",
       "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_enc.v",
       "ModuleLine" : 23,
@@ -57,7 +65,7 @@
      },
      {
       "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
-      "InstLine" : 112,
+      "InstLine" : 119,
       "InstName" : "svo_tmds_0",
       "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_tmds.v",
       "ModuleLine" : 23,
@@ -65,7 +73,7 @@
      },
      {
       "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
-      "InstLine" : 122,
+      "InstLine" : 129,
       "InstName" : "svo_tmds_1",
       "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_tmds.v",
       "ModuleLine" : 23,
@@ -73,7 +81,7 @@
      },
      {
       "InstFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
-      "InstLine" : 132,
+      "InstLine" : 139,
       "InstName" : "svo_tmds_2",
       "ModuleFile" : "/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_tmds.v",
       "ModuleLine" : 23,

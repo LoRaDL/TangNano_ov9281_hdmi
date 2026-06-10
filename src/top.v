@@ -21,7 +21,15 @@ module top (
     output       tmds_clk_n,
     output       tmds_clk_p,
     output [2:0] tmds_d_n,
-    output [2:0] tmds_d_p
+    output [2:0] tmds_d_p,
+
+    // PSRAM pins
+    output [0:0] O_psram_ck,
+    output [0:0] O_psram_ck_n,
+    inout [7:0] IO_psram_dq,
+    inout [0:0] IO_psram_rwds,
+    output [0:0] O_psram_cs_n,
+    output [0:0] O_psram_reset_n
 );
 
 // Camera System Clock generation: Divide 27MHz by 2 to get 13.5MHz (safe for wiring)
@@ -210,12 +218,12 @@ always @(*) begin
             next_write_lsb  = 8'h0F;
             next_write_data = 8'h08;
         end
-        5'd19: begin // Write 0x31 to 0x3814 (TIMING_X_INC = subsampling)
+        5'd19: begin // Write 0x31 to 0x3814 (TIMING_X_INC = 2x subsampling)
             next_write_msb  = 8'h38;
             next_write_lsb  = 8'h14;
             next_write_data = 8'h31;
         end
-        5'd20: begin // Write 0x22 to 0x3815 (TIMING_Y_INC = subsampling)
+        5'd20: begin // Write 0x22 to 0x3815 (TIMING_Y_INC = 2x subsampling)
             next_write_msb  = 8'h38;
             next_write_lsb  = 8'h15;
             next_write_data = 8'h22;
@@ -741,40 +749,520 @@ assign led[4] = led_out4;
 assign led[5] = led_out5;
 
 // ============================================================================
-// HDMI Display & Camera downsampler
+// HDMI Display & Camera PSRAM frame buffer
 // ============================================================================
-
-// Dual-port Block RAM (infers SDP BRAM in Gowin)
-// 320x200 = 64,000 pixels, 4 bits per pixel
-reg [3:0] frame_ram [0:63999];
 
 wire test_mode = display_mode;
 
+// 1. PSRAM Clock Generation (166.5 MHz memory clock from 27 MHz sys_clk)
+wire clk_psram_166;
+wire pll_lock_psram;
 
+rPLL rpll_psram (
+    .CLKOUT(clk_psram_166),
+    .LOCK(pll_lock_psram),
+    .CLKOUTP(),
+    .CLKOUTD(),
+    .CLKOUTD3(),
+    .RESET(1'b0),
+    .RESET_P(1'b0),
+    .CLKIN(sys_clk),
+    .CLKFB(1'b0),
+    .FBDSEL(6'b0),
+    .IDSEL(6'b0),
+    .ODSEL(6'b0),
+    .PSDA(4'b0),
+    .DUTYDA(4'b0),
+    .FDLY(4'b0)
+);
+defparam rpll_psram.FCLKIN = "27";
+defparam rpll_psram.DYN_IDIV_SEL = "false";
+defparam rpll_psram.IDIV_SEL = 5;
+defparam rpll_psram.DYN_FBDIV_SEL = "false";
+defparam rpll_psram.FBDIV_SEL = 36;
+defparam rpll_psram.DYN_ODIV_SEL = "false";
+defparam rpll_psram.ODIV_SEL = 4;
+defparam rpll_psram.DEVICE = "GW1NR-9C";
 
-// Write side (camera clock domain: cam_pclk)
-// Input resolution from camera is 640x400.
-// Downsample by 2x in both directions to get a 320x200 image stored in BRAM.
-// Row address = line_cnt[9:1] * 320 = (line_cnt[9:1]<<8) + (line_cnt[9:1]<<6)  [shift-add, no multiplier]
+// 2. PSRAM Memory Interface HS IP Instantiation
+wire [31:0] psram_wr_data;
+wire [31:0] psram_rd_data;
+wire psram_rd_data_valid;
+wire [20:0] psram_addr;
+wire psram_cmd;
+wire psram_cmd_en;
+wire psram_init_calib;
+wire clk_out; // 83.25 MHz output clock from IP
+
+PSRAM_Memory_Interface_HS_Top psram_inst (
+    .clk(sys_clk), // reference clock (27MHz)
+    .memory_clk(clk_psram_166),
+    .pll_lock(pll_lock_psram),
+    .rst_n(sys_rst_n),
+    
+    // Physical PSRAM pins connected to top level ports
+    .O_psram_ck(O_psram_ck),
+    .O_psram_ck_n(O_psram_ck_n),
+    .IO_psram_dq(IO_psram_dq),
+    .IO_psram_rwds(IO_psram_rwds),
+    .O_psram_cs_n(O_psram_cs_n),
+    .O_psram_reset_n(O_psram_reset_n),
+    
+    // User Interface
+    .wr_data(psram_wr_data),
+    .rd_data(psram_rd_data),
+    .rd_data_valid(psram_rd_data_valid),
+    .addr(psram_addr),
+    .cmd(psram_cmd),
+    .cmd_en(psram_cmd_en),
+    .init_calib(psram_init_calib),
+    .clk_out(clk_out),
+    .data_mask(4'b0000) // no byte masking (write all 4 bytes)
+);
+
+// 3. Triple-Buffering Frame Control Logic
+reg [1:0] wr_frame = 2'd0;
+reg [1:0] rd_frame = 2'd0;
+reg [1:0] last_wr_frame = 2'd0;
+
+// Synchronize rd_frame to cam_pclk domain
+reg [1:0] rd_frame_sync_0, rd_frame_sync_1;
+always @(negedge cam_pclk or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        rd_frame_sync_0 <= 2'd0;
+        rd_frame_sync_1 <= 2'd0;
+    end else begin
+        rd_frame_sync_0 <= rd_frame;
+        rd_frame_sync_1 <= rd_frame_sync_0;
+    end
+end
+
+// Advance wr_frame on camera VSYNC rising edge
+always @(posedge vsync_r or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        wr_frame <= 2'd0;
+        last_wr_frame <= 2'd0;
+    end else begin
+        last_wr_frame <= wr_frame;
+        if (rd_frame_sync_1 == 2'd0)
+            wr_frame <= (wr_frame == 2'd1) ? 2'd2 : 2'd1;
+        else if (rd_frame_sync_1 == 2'd1)
+            wr_frame <= (wr_frame == 2'd0) ? 2'd2 : 2'd0;
+        else
+            wr_frame <= (wr_frame == 2'd0) ? 2'd1 : 2'd0;
+    end
+end
+
+// Synchronize last_wr_frame to clk_pixel domain
+reg [1:0] last_wr_frame_sync_0, last_wr_frame_sync_1;
+always @(posedge clk_pixel or negedge sys_resetn) begin
+    if (!sys_resetn) begin
+        last_wr_frame_sync_0 <= 2'd0;
+        last_wr_frame_sync_1 <= 2'd0;
+    end else begin
+        last_wr_frame_sync_0 <= last_wr_frame;
+        last_wr_frame_sync_1 <= last_wr_frame_sync_0;
+    end
+end
+
+// Update rd_frame at the start of an HDMI frame
+always @(posedge clk_pixel or negedge sys_resetn) begin
+    if (!sys_resetn) begin
+        rd_frame <= 2'd0;
+    end else begin
+        if (vcursor_out == 10'd0 && hcursor_out == 10'd0) begin
+            rd_frame <= last_wr_frame_sync_1;
+        end
+    end
+end
+
+// Synchronize wr_frame and rd_frame to clk_out domain for PSRAM addressing
+reg [1:0] wr_frame_clkout_0, wr_frame_clkout_1;
+reg [1:0] rd_frame_clkout_0, rd_frame_clkout_1;
+always @(posedge clk_out or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        wr_frame_clkout_0 <= 2'd0;
+        wr_frame_clkout_1 <= 2'd0;
+        rd_frame_clkout_0 <= 2'd0;
+        rd_frame_clkout_1 <= 2'd0;
+    end else begin
+        wr_frame_clkout_0 <= wr_frame;
+        wr_frame_clkout_1 <= wr_frame_clkout_0;
+        rd_frame_clkout_0 <= rd_frame;
+        rd_frame_clkout_1 <= rd_frame_clkout_0;
+    end
+end
+
+localparam FRAME_OFFSET = 21'd64000;
+
+wire [20:0] wr_base_addr = (wr_frame_clkout_1 == 2'd0) ? 21'd0 :
+                           (wr_frame_clkout_1 == 2'd1) ? FRAME_OFFSET :
+                                                         (FRAME_OFFSET << 1);
+
+wire [20:0] rd_base_addr = (rd_frame_clkout_1 == 2'd0) ? 21'd0 :
+                           (rd_frame_clkout_1 == 2'd1) ? FRAME_OFFSET :
+                                                         (FRAME_OFFSET << 1);
+
+// 4. Mixed-width Line Buffers (using 4 parallel banks to map cleanly to Block RAM)
+reg [7:0] bank_wr0 [0:79];
+reg [7:0] bank_wr1 [0:79];
+reg [7:0] bank_wr2 [0:79];
+reg [7:0] bank_wr3 [0:79];
+
+reg [7:0] bank_rd0_a [0:79];
+reg [7:0] bank_rd1_a [0:79];
+reg [7:0] bank_rd2_a [0:79];
+reg [7:0] bank_rd3_a [0:79];
+
+reg [7:0] bank_rd0_b [0:79];
+reg [7:0] bank_rd1_b [0:79];
+reg [7:0] bank_rd2_b [0:79];
+reg [7:0] bank_rd3_b [0:79];
+
+// Write Line Logic (camera clock domain: cam_pclk)
+// Downsample 640x400 camera output by 2x in both directions to get 320x200 8-bit pixels
 wire wr_en = synced && href_r && (pixel_cnt[0] == 1'b0) && (line_cnt[0] == 1'b0)
              && (line_cnt < 400) && (pixel_cnt < 640);
-wire [15:0] wr_addr = {line_cnt[9:1], 8'b0} + {line_cnt[9:1], 6'b0} + pixel_cnt[11:1];
-wire [3:0]  wr_data = data_r[7:4];
+
+wire [8:0] cam_pixel_idx = pixel_cnt[11:1];
+wire [6:0] cam_bank_addr = cam_pixel_idx[8:2];
+wire [1:0] cam_bank_sel  = cam_pixel_idx[1:0];
 
 always @(posedge cam_pclk) begin
-    if (wr_en)
-        frame_ram[wr_addr] <= wr_data;
+    if (wr_en) begin
+        case (cam_bank_sel)
+            2'd0: bank_wr0[cam_bank_addr] <= data_r;
+            2'd1: bank_wr1[cam_bank_addr] <= data_r;
+            2'd2: bank_wr2[cam_bank_addr] <= data_r;
+            2'd3: bank_wr3[cam_bank_addr] <= data_r;
+        endcase
+    end
 end
 
-// Read side (HDMI clock domain: clk_pixel)
-wire [15:0] rd_addr;
-reg [3:0] rd_data;
+// Write CDC Handshake
+reg line_wr_req = 1'b0;
+reg [7:0] wr_line_num = 8'd0;
+reg line_wr_ack_sync_0, line_wr_ack_sync_1;
+
+always @(negedge cam_pclk or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        line_wr_req <= 1'b0;
+        wr_line_num <= 8'd0;
+        line_wr_ack_sync_0 <= 1'b0;
+        line_wr_ack_sync_1 <= 1'b0;
+    end else begin
+        line_wr_ack_sync_0 <= line_wr_ack;
+        line_wr_ack_sync_1 <= line_wr_ack_sync_0;
+        
+        if (!line_wr_req) begin
+            // Trigger write at the end of an active even camera row
+            if (href_prev && !href_r && (line_cnt[0] == 1'b0) && (line_cnt < 400)) begin
+                line_wr_req <= 1'b1;
+                wr_line_num <= line_cnt[9:1];
+            end
+        end else begin
+            if (line_wr_ack_sync_1) begin
+                line_wr_req <= 1'b0;
+            end
+        end
+    end
+end
+
+// 5. HDMI Display Timing and CDC Read Handshake (clk_pixel domain)
+wire [9:0] hcursor_out;
+wire [9:0] vcursor_out;
+
+reg [9:0] hcursor_r;
+always @(posedge clk_pixel or negedge sys_resetn) begin
+    if (!sys_resetn)
+        hcursor_r <= 10'd0;
+    else
+        hcursor_r <= hcursor_out;
+end
+
+wire line_done = (hcursor_r == 10'd639 && hcursor_out == 10'd0);
+
+reg line_rd_req = 1'b0;
+reg [7:0] rd_line_num = 8'd0;
+reg line_rd_ack_sync_0, line_rd_ack_sync_1;
+
+always @(posedge clk_pixel or negedge sys_resetn) begin
+    if (!sys_resetn) begin
+        line_rd_req <= 1'b0;
+        rd_line_num <= 8'd0;
+        line_rd_ack_sync_0 <= 1'b0;
+        line_rd_ack_sync_1 <= 1'b0;
+    end else begin
+        line_rd_ack_sync_0 <= line_rd_ack;
+        line_rd_ack_sync_1 <= line_rd_ack_sync_0;
+        
+        if (!line_rd_req) begin
+            if (line_done && (vcursor_out >= 10'd38) && (vcursor_out <= 10'd436) && (vcursor_out[0] == 1'b0)) begin
+                line_rd_req <= 1'b1;
+                rd_line_num <= (vcursor_out - 10'd38) >> 1;
+            end
+        end else begin
+            if (line_rd_ack_sync_1) begin
+                line_rd_req <= 1'b0;
+            end
+        end
+    end
+end
+
+// Line buffer read index calculation for HDMI display
+wire [9:0] next_hcursor = (hcursor_out == 10'd639) ? 10'd0 : (hcursor_out + 10'd1);
+wire [9:0] next_vcursor_for_rd = (hcursor_out == 10'd639) ? ((vcursor_out == 10'd479) ? 10'd0 : (vcursor_out + 10'd1)) : vcursor_out;
+wire [8:0] rd_buf_addr = next_hcursor[9:1];
+wire [8:0] rd_line_idx_for_buf = (next_vcursor_for_rd - 10'd40) >> 1;
+wire rd_buf_sel = rd_line_idx_for_buf[0];
+reg [7:0] rd_data; // 8-bit read data fed to svo_hdmi_inst
 
 always @(posedge clk_pixel) begin
-    rd_data <= frame_ram[rd_addr];
+    if (rd_buf_sel) begin
+        case (rd_buf_addr[1:0])
+            2'd0: rd_data <= bank_rd0_b[rd_buf_addr[8:2]];
+            2'd1: rd_data <= bank_rd1_b[rd_buf_addr[8:2]];
+            2'd2: rd_data <= bank_rd2_b[rd_buf_addr[8:2]];
+            2'd3: rd_data <= bank_rd3_b[rd_buf_addr[8:2]];
+        endcase
+    end else begin
+        case (rd_buf_addr[1:0])
+            2'd0: rd_data <= bank_rd0_a[rd_buf_addr[8:2]];
+            2'd1: rd_data <= bank_rd1_a[rd_buf_addr[8:2]];
+            2'd2: rd_data <= bank_rd2_a[rd_buf_addr[8:2]];
+            2'd3: rd_data <= bank_rd3_a[rd_buf_addr[8:2]];
+        endcase
+    end
 end
 
-// HDMI Clock Generation
+// 6. PSRAM Arbiter State Machine (clk_out domain: 83.25 MHz)
+reg line_wr_req_sync_0, line_wr_req_sync_1;
+reg line_rd_req_sync_0, line_rd_req_sync_1;
+reg [7:0] wr_line_num_clkout;
+reg [7:0] rd_line_num_clkout;
+reg [7:0] rd_line_num_latch;
+
+always @(posedge clk_out or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        line_wr_req_sync_0 <= 1'b0;
+        line_wr_req_sync_1 <= 1'b0;
+        line_rd_req_sync_0 <= 1'b0;
+        line_rd_req_sync_1 <= 1'b0;
+        wr_line_num_clkout <= 8'd0;
+        rd_line_num_clkout <= 8'd0;
+    end else begin
+        line_wr_req_sync_0 <= line_wr_req;
+        line_wr_req_sync_1 <= line_wr_req_sync_0;
+        line_rd_req_sync_0 <= line_rd_req;
+        line_rd_req_sync_1 <= line_rd_req_sync_0;
+        wr_line_num_clkout <= wr_line_num;
+        rd_line_num_clkout <= rd_line_num;
+    end
+end
+
+localparam S_IDLE       = 3'd0;
+localparam S_READ_CMD   = 3'd1;
+localparam S_READ_WAIT  = 3'd2;
+localparam S_READ_DONE  = 3'd3;
+localparam S_WRITE_CMD  = 3'd4;
+localparam S_WRITE_DATA = 3'd5;
+localparam S_WRITE_WAIT = 3'd6;
+localparam S_WRITE_DONE = 3'd7;
+
+reg [2:0] pstate = S_IDLE;
+reg [3:0] burst_num = 4'd0;
+reg [4:0] cmd_timer = 5'd0;
+reg [2:0] write_beat_cnt = 3'd0;
+reg [6:0] wr_ptr = 7'd0;
+
+reg line_wr_ack = 1'b0;
+reg line_rd_ack = 1'b0;
+
+reg psram_cmd_en_r = 1'b0;
+reg psram_cmd_r = 1'b0;
+reg [20:0] psram_addr_r = 21'd0;
+
+assign psram_cmd_en = psram_cmd_en_r;
+assign psram_cmd    = psram_cmd_r;
+assign psram_addr   = psram_addr_r;
+
+// Combinational pipeline address for reading from bank_wr
+reg [6:0] wr_bank_rd_addr;
+always @(*) begin
+    if (pstate == S_IDLE) begin
+        wr_bank_rd_addr = 7'd0; // pre-fetch first word of burst 0
+    end else if (pstate == S_WRITE_CMD) begin
+        wr_bank_rd_addr = {burst_num, 3'd0}; // first captured beat must be word0 (addr leads data by 1 clk_out)
+    end else if (pstate == S_WRITE_DATA) begin
+        if (write_beat_cnt < 3'd7)
+            wr_bank_rd_addr = {burst_num, 3'd0} + {4'd0, write_beat_cnt} + 7'd1;
+        else // write_beat_cnt == 7
+            wr_bank_rd_addr = {burst_num + 4'd1, 3'd0}; // pre-fetch first word of next burst
+    end else begin
+        wr_bank_rd_addr = 7'd0;
+    end
+end
+
+// Register the bank_wr read data in clk_out domain
+reg [31:0] psram_wr_data_r = 32'd0;
+assign psram_wr_data = psram_wr_data_r;
+
+always @(posedge clk_out) begin
+    psram_wr_data_r <= {
+        bank_wr3[wr_bank_rd_addr],
+        bank_wr2[wr_bank_rd_addr],
+        bank_wr1[wr_bank_rd_addr],
+        bank_wr0[wr_bank_rd_addr]
+    };
+end
+
+always @(posedge clk_out or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        pstate <= S_IDLE;
+        burst_num <= 4'd0;
+        cmd_timer <= 5'd0;
+        write_beat_cnt <= 3'd0;
+        rd_line_num_latch <= 8'd0;
+        line_wr_ack <= 1'b0;
+        line_rd_ack <= 1'b0;
+        psram_cmd_en_r <= 1'b0;
+        psram_cmd_r <= 1'b0;
+        psram_addr_r <= 21'd0;
+    end else begin
+        case (pstate)
+            S_IDLE: begin
+                burst_num <= 4'd0;
+                cmd_timer <= 5'd0;
+                write_beat_cnt <= 3'd0;
+                psram_cmd_en_r <= 1'b0;
+                
+                if (psram_init_calib) begin
+                    // Prioritize read requests to avoid screen flickering
+                    if (line_rd_req_sync_1 && !line_rd_ack) begin
+                        pstate <= S_READ_CMD;
+                    end else if (line_wr_req_sync_1 && !line_wr_ack) begin
+                        pstate <= S_WRITE_CMD;
+                    end
+                end
+                
+                if (!line_wr_req_sync_1) begin
+                    line_wr_ack <= 1'b0;
+                end
+                if (!line_rd_req_sync_1) begin
+                    line_rd_ack <= 1'b0;
+                end
+            end
+            
+            S_READ_CMD: begin
+                psram_cmd_en_r <= 1'b1;
+                psram_cmd_r <= 1'b0; // Read command
+                if (burst_num == 4'd0)
+                    rd_line_num_latch <= rd_line_num_clkout;
+                psram_addr_r <= rd_base_addr + {rd_line_num_clkout, 8'b0} + {rd_line_num_clkout, 6'b0} + {burst_num, 5'b0};
+                cmd_timer <= 5'd0;
+                pstate <= S_READ_WAIT;
+            end
+            
+            S_READ_WAIT: begin
+                psram_cmd_en_r <= 1'b0;
+                cmd_timer <= cmd_timer + 5'd1;
+                
+                if (cmd_timer >= 5'd31) begin
+                    if (burst_num < 4'd9) begin
+                        burst_num <= burst_num + 4'd1;
+                        pstate <= S_READ_CMD;
+                    end else begin
+                        pstate <= S_READ_DONE;
+                    end
+                end
+            end
+            
+            S_READ_DONE: begin
+                if (wr_ptr == 7'd80) begin
+                    line_rd_ack <= 1'b1;
+                    if (!line_rd_req_sync_1) begin
+                        line_rd_ack <= 1'b0;
+                        pstate <= S_IDLE;
+                    end
+                end
+            end
+            
+            S_WRITE_CMD: begin
+                psram_cmd_en_r <= 1'b1;
+                psram_cmd_r <= 1'b1; // Write command
+                psram_addr_r <= wr_base_addr + {wr_line_num_clkout, 8'b0} + {wr_line_num_clkout, 6'b0} + {burst_num, 5'b0};
+                cmd_timer <= 5'd0;
+                write_beat_cnt <= 3'd0;
+                pstate <= S_WRITE_DATA;
+            end
+            
+            S_WRITE_DATA: begin
+                psram_cmd_en_r <= 1'b0;
+                cmd_timer <= cmd_timer + 5'd1;
+                write_beat_cnt <= write_beat_cnt + 3'd1;
+                
+                if (write_beat_cnt == 3'd7) begin
+                    pstate <= S_WRITE_WAIT;
+                end
+            end
+            
+            S_WRITE_WAIT: begin
+                cmd_timer <= cmd_timer + 5'd1;
+                
+                if (cmd_timer >= 5'd31) begin
+                    if (burst_num < 4'd9) begin
+                        burst_num <= burst_num + 4'd1;
+                        pstate <= S_WRITE_CMD;
+                    end else begin
+                        pstate <= S_WRITE_DONE;
+                    end
+                end
+            end
+            
+            S_WRITE_DONE: begin
+                line_wr_ack <= 1'b1;
+                if (!line_wr_req_sync_1) begin
+                    line_wr_ack <= 1'b0;
+                    pstate <= S_IDLE;
+                end
+            end
+            
+            default: pstate <= S_IDLE;
+        endcase
+    end
+end
+
+// Write to bank_rd in clk_out domain when read data is valid
+always @(posedge clk_out) begin
+    if (psram_rd_data_valid) begin
+        if (rd_line_num_latch[0]) begin
+            bank_rd0_b[wr_ptr[6:0]] <= psram_rd_data[7:0];
+            bank_rd1_b[wr_ptr[6:0]] <= psram_rd_data[15:8];
+            bank_rd2_b[wr_ptr[6:0]] <= psram_rd_data[23:16];
+            bank_rd3_b[wr_ptr[6:0]] <= psram_rd_data[31:24];
+        end else begin
+            bank_rd0_a[wr_ptr[6:0]] <= psram_rd_data[7:0];
+            bank_rd1_a[wr_ptr[6:0]] <= psram_rd_data[15:8];
+            bank_rd2_a[wr_ptr[6:0]] <= psram_rd_data[23:16];
+            bank_rd3_a[wr_ptr[6:0]] <= psram_rd_data[31:24];
+        end
+    end
+end
+
+always @(posedge clk_out or negedge sys_rst_n) begin
+    if (!sys_rst_n) begin
+        wr_ptr <= 7'd0;
+    end else begin
+        if (psram_rd_data_valid) begin
+            wr_ptr <= wr_ptr + 7'd1;
+        end
+        if (pstate == S_IDLE) begin
+            wr_ptr <= 7'd0;
+        end
+    end
+end
+
+// 7. HDMI Clock Generation
 wire clk_p5;    // 5x pixel clock
 wire clk_pixel; // 1x pixel clock
 wire pll_lock;
@@ -799,6 +1287,7 @@ Reset_Sync u_Reset_Sync (
 );
 
 // Instantiate HDMI Controller
+wire [15:0] rd_addr; // unused dummy wire to satisfy svo_hdmi interface
 svo_hdmi svo_hdmi_inst (
     .clk(clk_pixel),
     .resetn(sys_resetn),
@@ -819,7 +1308,11 @@ svo_hdmi svo_hdmi_inst (
     .tmds_clk_n(tmds_clk_n),
     .tmds_clk_p(tmds_clk_p),
     .tmds_d_n(tmds_d_n),
-    .tmds_d_p(tmds_d_p)
+    .tmds_d_p(tmds_d_p),
+
+    // Cursor outputs
+    .hcursor_out(hcursor_out),
+    .vcursor_out(vcursor_out)
 );
 
 endmodule

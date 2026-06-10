@@ -2,10 +2,6 @@
  "Device" : "GW1NR-9C",
  "Files" : [
   {
-   "Path" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
-   "Type" : "verilog"
-  },
-  {
    "Path" : "/home/lora/proj/FPGAExample/camera_hdmi/src/cam_display.v",
    "Type" : "verilog"
   },
@@ -30,7 +26,15 @@
    "Type" : "verilog"
   },
   {
+   "Path" : "/home/lora/proj/FPGAExample/camera_hdmi/src/psram_memory_interface_hs/psram_memory_interface_hs.v",
+   "Type" : "verilog"
+  },
+  {
    "Path" : "/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v",
+   "Type" : "verilog"
+  },
+  {
+   "Path" : "/home/lora/proj/FPGAExample/camera_hdmi/src/top.v",
    "Type" : "verilog"
   }
  ],

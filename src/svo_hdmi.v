@@ -34,13 +34,17 @@ module svo_hdmi(
 
 	// RAM read interface
 	output [15:0] rd_addr,
-	input [3:0] rd_data,
+	input [7:0] rd_data,
 
 	// output signals
 	output       tmds_clk_n,
 	output       tmds_clk_p,
 	output [2:0] tmds_d_n,
-	output [2:0] tmds_d_p
+	output [2:0] tmds_d_p,
+
+	// Cursor outputs
+	output [9:0] hcursor_out,
+	output [9:0] vcursor_out
 );
 	parameter SVO_MODE             =   "640x480V";
 	parameter SVO_FRAMERATE        =   60;
@@ -89,7 +93,10 @@ module svo_hdmi(
 		.out_axis_tvalid(vdma_tvalid),
 		.out_axis_tready(vdma_tready),
 		.out_axis_tdata(vdma_tdata),
-		.out_axis_tuser(vdma_tuser)
+		.out_axis_tuser(vdma_tuser),
+
+		.hcursor_out(hcursor_out),
+		.vcursor_out(vcursor_out)
 	);
 
 	svo_enc #( `SVO_PASS_PARAMS ) svo_enc (

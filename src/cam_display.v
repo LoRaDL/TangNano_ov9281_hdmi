@@ -9,18 +9,25 @@ module cam_display (
 
     // RAM read interface
     output [15:0] rd_addr,
-    input [3:0] rd_data,
+    input [7:0] rd_data,
 
     // AXI-Stream output
     output reg out_axis_tvalid,
     input out_axis_tready,
     output reg [23:0] out_axis_tdata,
-    output reg [0:0] out_axis_tuser
+    output reg [0:0] out_axis_tuser,
+
+    // Cursor outputs
+    output [9:0] hcursor_out,
+    output [9:0] vcursor_out
 );
     parameter SVO_HOR_PIXELS = 640;
     parameter SVO_VER_PIXELS = 480;
     parameter CAM_HOR_PIXELS = 320;
     parameter CAM_VER_PIXELS = 200; // Exactly 400 camera lines downsampled by 2
+
+    assign hcursor_out = hcursor;
+    assign vcursor_out = vcursor;
 
     reg [9:0] hcursor; // 0 to 639
     reg [9:0] vcursor; // 0 to 479
@@ -80,26 +87,23 @@ module cam_display (
     wire is_line_bar  = (vcursor_q >= 10'd270 && vcursor_q < 10'd320) && (hcursor_q < line_scaled);
     
     // Scale tick lines (vertical dashed lines)
-    // PCLK axis ticks at 640 (x=213), 958 (x=319), 1280 (x=426), 1384 (x=460)
     wire is_tick_640  = (hcursor_q == 10'd213) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_958  = (hcursor_q == 10'd319) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_1280 = (hcursor_q == 10'd426) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_1384 = (hcursor_q == 10'd460) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
-    
-    // Line axis ticks at 400 (x=200), 800 (x=400)
     wire is_tick_400  = (hcursor_q == 10'd200) && (vcursor_q >= 10'd250 && vcursor_q < 10'd340) && (vcursor_q[2] == 1'b0);
     wire is_tick_800  = (hcursor_q == 10'd400) && (vcursor_q >= 10'd250 && vcursor_q < 10'd340) && (vcursor_q[2] == 1'b0);
     
     // Color mapping corrected for BGR24 format: {B[7:0], G[7:0], R[7:0]}
-    wire [23:0] debug_pixel = is_pclk_bar  ? 24'h00FF00 : // Green bar (B=00, G=FF, R=00)
-                              is_line_bar  ? 24'hFFFF00 : // Cyan bar (B=FF, G=FF, R=00)
-                              is_tick_640  ? 24'hFFFF00 : // Cyan tick for 640 (B=FF, G=FF, R=00)
-                              is_tick_958  ? 24'h0080FF : // Orange tick (B=00, G=80, R=FF)
-                              is_tick_1280 ? 24'h0000FF : // Red tick (B=00, G=00, R=FF)
-                              is_tick_1384 ? 24'hFF00FF : // Magenta tick (B=FF, G=00, R=FF)
-                              is_tick_400  ? 24'h00FFFF : // Yellow tick (B=00, G=FF, R=FF)
-                              is_tick_800  ? 24'hFF00FF : // Magenta tick (B=FF, G=00, R=FF)
-                                             24'h2D1E14;  // Slate blue background (B=45, G=30, R=20)
+    wire [23:0] debug_pixel = is_pclk_bar  ? 24'h00FF00 :
+                              is_line_bar  ? 24'hFFFF00 :
+                              is_tick_640  ? 24'hFFFF00 :
+                              is_tick_958  ? 24'h0080FF :
+                              is_tick_1280 ? 24'h0000FF :
+                              is_tick_1384 ? 24'hFF00FF :
+                              is_tick_400  ? 24'h00FFFF :
+                              is_tick_800  ? 24'hFF00FF :
+                                             24'h2D1E14;
 
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
@@ -127,8 +131,8 @@ module cam_display (
             if (test_mode) begin
                 out_axis_tdata <= debug_pixel;
             end else if (active_q) begin
-                // Map 4-bit BRAM grayscale pixel data to 24-bit RGB (R=G=B)
-                out_axis_tdata <= { {rd_data, rd_data}, {rd_data, rd_data}, {rd_data, rd_data} };
+                // Map 8-bit PSRAM grayscale pixel data to 24-bit RGB (R=G=B)
+                out_axis_tdata <= { rd_data, rd_data, rd_data };
             end else begin
                 out_axis_tdata <= 24'd0; // Black border
             end

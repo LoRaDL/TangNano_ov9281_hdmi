@@ -4,14 +4,15 @@
     <Version>beta</Version>
     <Device id="GW1NR-9C" package="QFN88P" speed="6" partNumber="GW1NR-LV9QN88PC6/I5"/>
     <FileList>
-        <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/top.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/cam_display.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/gowin_clkdiv/gowin_clkdiv.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/gowin_rpll/gowin_rpll.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_defines.vh" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_enc.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/hdmi/svo_tmds.v" type="verilog"/>
+        <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/psram_memory_interface_hs/psram_memory_interface_hs.v" type="verilog"/>
         <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/svo_hdmi.v" type="verilog"/>
+        <File path="/home/lora/proj/FPGAExample/camera_hdmi/src/top.v" type="verilog"/>
     </FileList>
     <OptionList>
         <Option type="disable_insert_pad" value="0"/>

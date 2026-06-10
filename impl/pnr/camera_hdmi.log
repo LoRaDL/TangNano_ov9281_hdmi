@@ -7,10 +7,7 @@ Running placement......
 [10%] Placement Phase 0 completed
 [20%] Placement Phase 1 completed
 [30%] Placement Phase 2 completed
-WARN  (TA1132) :  'cam_pclk' was determined to be a clock but was not created.
-WARN  (TA1132) :  'vsync_r' was determined to be a clock but was not created.
-WARN  (TA1132) :  'u_div_5/clkdiv_inst/CLKOUT.default_gen_clk' was determined to be a clock but was not created.
-WARN  (TA1117) : Can't calculate clocks' relationship between: "vsync_r" and "u_div_5/clkdiv_inst/CLKOUT.default_gen_clk"
+WARN  (TA1117) : Can't calculate clocks' relationship between: "clk_pixel" and "u_pll/rpll_inst/CLKOUT.default_gen_clk"
 [50%] Placement Phase 3 completed
 Running routing......
 [60%] Routing Phase 0 completed
@@ -30,5 +27,5 @@ Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.pin.
 Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.rpt.html" completed
 Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.rpt.txt" completed
 Generate file "/home/lora/proj/FPGAExample/camera_hdmi/impl/pnr/camera_hdmi.tr.html" completed
-Wed Jun 10 19:20:57 2026
+Wed Jun 10 22:15:28 2026
 
