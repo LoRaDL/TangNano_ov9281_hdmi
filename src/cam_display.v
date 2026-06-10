@@ -20,7 +20,7 @@ module cam_display (
     parameter SVO_HOR_PIXELS = 640;
     parameter SVO_VER_PIXELS = 480;
     parameter CAM_HOR_PIXELS = 320;
-    parameter CAM_VER_PIXELS = 140; // Exactly 560 camera lines downsampled by 4
+    parameter CAM_VER_PIXELS = 200; // Exactly 400 camera lines downsampled by 2
 
     reg [9:0] hcursor; // 0 to 639
     reg [9:0] vcursor; // 0 to 479
@@ -45,16 +45,16 @@ module cam_display (
         end
     end
 
-    // Center the 320x140 camera image vertically on 640x480 screen.
-    // 320x140 scaled up by 2 is 640x280.
-    // Vertical active range for camera: from line 100 to line 379 (inclusive)
+    // Center the 320x200 camera image vertically on 640x480 screen.
+    // 320x200 scaled up by 2 is 640x400.
+    // Vertical active range for camera: from line 40 to line 439 (inclusive)
     // Horizontal range is 0 to 639 (scaled 2x from 320 pixels)
-    wire [9:0] v_offset = (next_vcursor >= 10'd100) ? (next_vcursor - 10'd100) : 10'd0;
-    wire [8:0] v_index = v_offset[9:1];      // (next_vcursor - 100) / 2
+    wire [9:0] v_offset = (next_vcursor >= 10'd40) ? (next_vcursor - 10'd40) : 10'd0;
+    wire [8:0] v_index = v_offset[9:1];      // (next_vcursor - 40) / 2
     wire [8:0] h_index = next_hcursor[9:1];   // next_hcursor / 2
 
-    // Check if next coordinate is in the active camera display window (lines 100 to 379)
-    wire next_active = (next_vcursor >= 10'd100 && next_vcursor < 10'd380);
+    // Check if next coordinate is in the active camera display window (lines 40 to 439)
+    wire next_active = (next_vcursor >= 10'd40 && next_vcursor < 10'd440);
 
     // RAM address: v_index * 320 + h_index
     // Uses shift-and-add: 320 = 256 + 64
@@ -80,7 +80,8 @@ module cam_display (
     wire is_line_bar  = (vcursor_q >= 10'd270 && vcursor_q < 10'd320) && (hcursor_q < line_scaled);
     
     // Scale tick lines (vertical dashed lines)
-    // PCLK axis ticks at 958 (x=319), 1280 (x=426), 1384 (x=460)
+    // PCLK axis ticks at 640 (x=213), 958 (x=319), 1280 (x=426), 1384 (x=460)
+    wire is_tick_640  = (hcursor_q == 10'd213) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_958  = (hcursor_q == 10'd319) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_1280 = (hcursor_q == 10'd426) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
     wire is_tick_1384 = (hcursor_q == 10'd460) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
@@ -92,6 +93,7 @@ module cam_display (
     // Color mapping corrected for BGR24 format: {B[7:0], G[7:0], R[7:0]}
     wire [23:0] debug_pixel = is_pclk_bar  ? 24'h00FF00 : // Green bar (B=00, G=FF, R=00)
                               is_line_bar  ? 24'hFFFF00 : // Cyan bar (B=FF, G=FF, R=00)
+                              is_tick_640  ? 24'hFFFF00 : // Cyan tick for 640 (B=FF, G=FF, R=00)
                               is_tick_958  ? 24'h0080FF : // Orange tick (B=00, G=80, R=FF)
                               is_tick_1280 ? 24'h0000FF : // Red tick (B=00, G=00, R=FF)
                               is_tick_1384 ? 24'hFF00FF : // Magenta tick (B=FF, G=00, R=FF)

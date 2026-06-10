@@ -94,7 +94,7 @@ reg scl_out;
 reg sda_out;
 reg sda_oe;
 reg i2c_error;
-reg [3:0] trans_idx;
+reg [4:0] trans_idx;
 reg stream_enabled;
 
 localparam STATE_IDLE      = 4'd0;
@@ -120,47 +120,147 @@ reg [7:0] next_write_data;
 
 always @(*) begin
     case (trans_idx)
-        4'd1: begin // Write 0x00 to 0x3014 (Disable MIPI, Enable DVP)
+        5'd1: begin // Write 0x00 to 0x3014 (Disable MIPI, Enable DVP)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h14;
             next_write_data = 8'h00;
         end
-        4'd2: begin // Write 0x22 to 0x3039 (Disable MIPI, Enable DVP)
+        5'd2: begin // Write 0x22 to 0x3039 (Disable MIPI, Enable DVP)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h39;
             next_write_data = 8'h22;
         end
-        4'd3: begin // Write 0x01 to 0x4317 (Enable DVP option)
+        5'd3: begin // Write 0x01 to 0x4317 (Enable DVP option)
             next_write_msb  = 8'h43;
             next_write_lsb  = 8'h17;
             next_write_data = 8'h01;
         end
-        4'd4: begin // Write 0x01 to 0x4701 (Output standard VSYNC)
+        5'd4: begin // Write 0x01 to 0x4701 (Output standard VSYNC)
             next_write_msb  = 8'h47;
             next_write_lsb  = 8'h01;
             next_write_data = 8'h01;
         end
-        4'd5: begin // Write 0x01 to 0x300D (Enable DVP clock gclk_dvp)
+        5'd5: begin // Write 0x01 to 0x300D (Enable DVP clock gclk_dvp)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h0D;
             next_write_data = 8'h01;
         end
-        4'd6: begin // Write 0xFF to 0x3004 (Enable output pads)
+        5'd6: begin // Write 0xFF to 0x3004 (Enable output pads)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h04;
             next_write_data = 8'hFF;
         end
-        4'd7: begin // Write 0xFF to 0x3005 (Enable output pads)
+        5'd7: begin // Write 0xFF to 0x3005 (Enable output pads)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h05;
             next_write_data = 8'hFF;
         end
-        4'd8: begin // Write 0xFF to 0x3006 (Enable output pads)
+        5'd8: begin // Write 0xFF to 0x3006 (Enable output pads)
             next_write_msb  = 8'h30;
             next_write_lsb  = 8'h06;
             next_write_data = 8'hFF;
         end
-        4'd9: begin // Write 0x01 to 0x0100 (Streaming Enable)
+        5'd9: begin // Write 0x00 to 0x3802 (TIMING_Y_ADDR_START H = 0)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h02;
+            next_write_data = 8'h00;
+        end
+        5'd10: begin // Write 0x00 to 0x3803 (TIMING_Y_ADDR_START L = 0)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h03;
+            next_write_data = 8'h00;
+        end
+        5'd11: begin // Write 0x03 to 0x3806 (TIMING_Y_ADDR_END H = 815)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h06;
+            next_write_data = 8'h03;
+        end
+        5'd12: begin // Write 0x2F to 0x3807 (TIMING_Y_ADDR_END L)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h07;
+            next_write_data = 8'h2F;
+        end
+        5'd13: begin // Write 0x02 to 0x3808 (TIMING_X_OUTPUT_SIZE H = 640)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h08;
+            next_write_data = 8'h02;
+        end
+        5'd14: begin // Write 0x80 to 0x3809 (TIMING_X_OUTPUT_SIZE L = 640)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h09;
+            next_write_data = 8'h80;
+        end
+        5'd15: begin // Write 0x01 to 0x380A (TIMING_Y_OUTPUT_SIZE H = 400)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h0A;
+            next_write_data = 8'h01;
+        end
+        5'd16: begin // Write 0x90 to 0x380B (TIMING_Y_OUTPUT_SIZE L = 400)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h0B;
+            next_write_data = 8'h90;
+        end
+        5'd17: begin // Write 0x02 to 0x380E (TIMING_VTS H = 520)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h0E;
+            next_write_data = 8'h02;
+        end
+        5'd18: begin // Write 0x08 to 0x380F (TIMING_VTS L = 520)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h0F;
+            next_write_data = 8'h08;
+        end
+        5'd19: begin // Write 0x31 to 0x3814 (TIMING_X_INC = subsampling)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h14;
+            next_write_data = 8'h31;
+        end
+        5'd20: begin // Write 0x22 to 0x3815 (TIMING_Y_INC = subsampling)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h15;
+            next_write_data = 8'h22;
+        end
+        5'd21: begin // Write 0x60 to 0x3820 (TIMING_FORMAT1 = subsampling)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h20;
+            next_write_data = 8'h60;
+        end
+        5'd22: begin // Write 0x01 to 0x3821 (TIMING_FORMAT2 = subsampling)
+            next_write_msb  = 8'h38;
+            next_write_lsb  = 8'h21;
+            next_write_data = 8'h01;
+        end
+        5'd23: begin // Write 0x00 to 0x5E00 (Disable Test Pattern Bar)
+            next_write_msb  = 8'h5E;
+            next_write_lsb  = 8'h00;
+            next_write_data = 8'h00;
+        end
+        5'd24: begin // Write 0x03 to 0x3503 (Enable Manual AEC/AGC)
+            next_write_msb  = 8'h35;
+            next_write_lsb  = 8'h03;
+            next_write_data = 8'h03;
+        end
+        5'd25: begin // Write 0x19 to 0x3501 (Long Exposure MSB = 400 lines)
+            next_write_msb  = 8'h35;
+            next_write_lsb  = 8'h01;
+            next_write_data = 8'h19;
+        end
+        5'd26: begin // Write 0x00 to 0x3502 (Long Exposure LSB)
+            next_write_msb  = 8'h35;
+            next_write_lsb  = 8'h02;
+            next_write_data = 8'h00;
+        end
+        5'd27: begin // Write 0x02 to 0x3508 (Analog Gain MSB = 4x Gain)
+            next_write_msb  = 8'h35;
+            next_write_lsb  = 8'h08;
+            next_write_data = 8'h02;
+        end
+        5'd28: begin // Write 0x00 to 0x3509 (Analog Gain LSB)
+            next_write_msb  = 8'h35;
+            next_write_lsb  = 8'h09;
+            next_write_data = 8'h00;
+        end
+        5'd29: begin // Write 0x01 to 0x0100 (Streaming Enable)
             next_write_msb  = 8'h01;
             next_write_lsb  = 8'h00;
             next_write_data = 8'h01;
@@ -185,7 +285,7 @@ always @(posedge sys_clk or negedge sys_rst_n) begin
         sda_out <= 1'b1;
         sda_oe <= 1'b1;
         i2c_error <= 1'b0;
-        trans_idx <= 4'd0;
+        trans_idx <= 5'd0;
         stream_enabled <= 1'b0;
     end else if (tick) begin
         case (state)
@@ -249,7 +349,7 @@ always @(posedge sys_clk or negedge sys_rst_n) begin
                     if (i2c_error) begin
                         state <= STATE_ERROR;
                     end else begin
-                        if (trans_idx == 4'd0) begin
+                        if (trans_idx == 5'd0) begin
                             case (byte_cnt)
                                 3'd0: begin
                                     byte_cnt <= 3'd1;
@@ -373,17 +473,17 @@ always @(posedge sys_clk or negedge sys_rst_n) begin
                 scl_out <= 1'b1;
                 sda_out <= 1'b1;
                 sda_oe <= 1'b1;
-                if (trans_idx < 4'd9) begin
-                    if (trans_idx == 4'd0) begin
+                if (trans_idx < 5'd29) begin
+                    if (trans_idx == 5'd0) begin
                         if (read_data == 8'h92) begin
-                            trans_idx <= trans_idx + 4'd1;
+                            trans_idx <= trans_idx + 5'd1;
                             state <= STATE_IDLE; // Trigger next transaction
                         end
                     end else begin
-                        trans_idx <= trans_idx + 4'd1;
+                        trans_idx <= trans_idx + 5'd1;
                         state <= STATE_IDLE; // Trigger next transaction
                     end
-                end else if (trans_idx == 4'd9) begin
+                end else if (trans_idx == 5'd29) begin
                     stream_enabled <= 1'b1;
                 end
             end
@@ -653,13 +753,12 @@ wire test_mode = display_mode;
 
 
 // Write side (camera clock domain: cam_pclk)
-// Real camera line width = ~1384 pixels (346 BRAM cols).
-// We crop to the first 1280 pixels (320 BRAM cols) and pack rows with stride=320.
-// The remaining ~104 pixels per line are ignored (pixel_cnt keeps running but wr_en=0).
-// Row address = line_cnt[9:2] * 320 = (line_cnt[9:2]<<8) + (line_cnt[9:2]<<6)  [shift-add, no multiplier]
-wire wr_en = synced && href_r && (pixel_cnt[1:0] == 2'b00) && (line_cnt[1:0] == 2'b00)
-             && (line_cnt < 560) && (pixel_cnt < 1280);
-wire [15:0] wr_addr = {line_cnt[9:2], 8'b0} + {line_cnt[9:2], 6'b0} + pixel_cnt[11:2];
+// Input resolution from camera is 640x400.
+// Downsample by 2x in both directions to get a 320x200 image stored in BRAM.
+// Row address = line_cnt[9:1] * 320 = (line_cnt[9:1]<<8) + (line_cnt[9:1]<<6)  [shift-add, no multiplier]
+wire wr_en = synced && href_r && (pixel_cnt[0] == 1'b0) && (line_cnt[0] == 1'b0)
+             && (line_cnt < 400) && (pixel_cnt < 640);
+wire [15:0] wr_addr = {line_cnt[9:1], 8'b0} + {line_cnt[9:1], 6'b0} + pixel_cnt[11:1];
 wire [3:0]  wr_data = data_r[7:4];
 
 always @(posedge cam_pclk) begin
