@@ -457,13 +457,6 @@ end
 
 wire href_rose = href_r && !href_prev;
 
-// Clock Domain Crossing (CDC) synchronizer for line_width (sys_clk -> cam_pclk domain)
-reg [10:0] line_width_cam0;
-reg [10:0] line_width_cam1;
-always @(posedge cam_pclk) begin
-    line_width_cam0 <= line_width;
-    line_width_cam1 <= line_width_cam0;
-end
 
 // Level-sensitive reset using vsync_r is extremely robust against clock glitches
 // during vertical blanking. Holding counters at 0 during VSYNC high ensures alignment.
@@ -485,18 +478,14 @@ always @(negedge cam_pclk or negedge sys_rst_n) begin
                 line_cnt <= 10'd0;
             end
         end else begin
-            // Lockout-guarded HREF alignment with flywheel fallback.
-            // Active video is around 1278-1280 cycles. We block any HREF reset until 1200 cycles.
-            // This 100% immunizes mid-line clock and data crosstalk noise on HREF.
-            if (href_rose && (pixel_cnt >= 12'd1200)) begin
-                pixel_cnt <= 12'd0;
-                line_cnt <= line_cnt + 10'd1;
-            end else if (pixel_cnt == 12'd1600) begin
-                // Fallback in case we miss HREF to keep display state alive
-                pixel_cnt <= 12'd0;
-                line_cnt <= line_cnt + 10'd1;
-            end else begin
+            // Standard and raw DVP capture logic
+            if (href_r) begin
                 pixel_cnt <= pixel_cnt + 12'd1;
+            end else begin
+                pixel_cnt <= 12'd0;
+                if (href_prev) begin // HREF falling edge (line end)
+                    line_cnt <= line_cnt + 10'd1;
+                end
             end
         end
     end
@@ -582,22 +571,26 @@ end
 reg [9:0] max_line_cnt;
 reg [11:0] max_pixel_cnt;
 
-always @(posedge vsync_r or negedge sys_rst_n) begin
+// Use temporary register to track maximum pixel_cnt during a frame
+reg [11:0] pixel_cnt_max_temp;
+always @(negedge cam_pclk or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
-        max_line_cnt <= 10'd0;
-    end else begin
-        max_line_cnt <= line_cnt;
+        pixel_cnt_max_temp <= 12'd0;
+    end else if (vsync_r) begin
+        pixel_cnt_max_temp <= 12'd0;
+    end else if (href_r && (pixel_cnt > pixel_cnt_max_temp)) begin
+        pixel_cnt_max_temp <= pixel_cnt;
     end
 end
 
-// Latch absolute maximum pixel_cnt seen during active video of a frame
-always @(negedge cam_pclk or negedge sys_rst_n) begin
+// Latch frame-static values at the end of each frame (VSYNC rising edge)
+always @(posedge vsync_r or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
+        max_line_cnt  <= 10'd0;
         max_pixel_cnt <= 12'd0;
-    end else if (vsync_r) begin
-        max_pixel_cnt <= 12'd0; // Reset at frame start
-    end else if (href_r && (pixel_cnt > max_pixel_cnt)) begin
-        max_pixel_cnt <= pixel_cnt;
+    end else begin
+        max_line_cnt  <= line_cnt;
+        max_pixel_cnt <= pixel_cnt_max_temp;
     end
 end
 
@@ -619,28 +612,17 @@ always @(posedge sys_clk or negedge sys_rst_n) begin
     end
 end
 
-reg [10:0] line_width;
 always @(posedge sys_clk or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
         button_prev  <= 1'b1;
         display_mode <= 1'b0;
-        line_width   <= 11'd950; // Default to 950
     end else begin
         button_prev <= btn_state;
         if (button_prev && !btn_state) begin // S2 falling edge (pressed)
             display_mode <= ~display_mode;
-            if (line_width >= 11'd970) begin
-                line_width <= 11'd950; // Wrap back to 950 after 970
-            end else begin
-                line_width <= line_width + 11'd1; // Step size 1
-            end
         end
     end
 end
-
-// Map line_width to a 6-bit index for LED display (active-low)
-// line_width - 950 -> goes from 0 to 20.
-wire [5:0] led_index = (line_width >= 11'd950 && line_width <= 11'd970) ? (line_width - 11'd950) : 6'd0;
 
 // Compare PWM counter with registered pixel intensity to set LED brightness (active-low)
 wire led_out0 = (pwm_cnt < led_val0) ? 1'b0 : 1'b1;
@@ -650,14 +632,13 @@ wire led_out3 = (pwm_cnt < led_val3) ? 1'b0 : 1'b1;
 wire led_out4 = (pwm_cnt < led_val4) ? 1'b0 : 1'b1;
 wire led_out5 = (pwm_cnt < led_val5) ? 1'b0 : 1'b1;
 
-// When S2 is released (button = 1), LEDs show camera brightness.
-// When S2 is held (button = 0), LEDs show the current line_width index.
-assign led[0] = button ? led_out0 : ~led_index[0];
-assign led[1] = button ? led_out1 : ~led_index[1];
-assign led[2] = button ? led_out2 : ~led_index[2];
-assign led[3] = button ? led_out3 : ~led_index[3];
-assign led[4] = button ? led_out4 : ~led_index[4];
-assign led[5] = button ? led_out5 : ~led_index[5];
+// LEDs directly show camera brightness.
+assign led[0] = led_out0;
+assign led[1] = led_out1;
+assign led[2] = led_out2;
+assign led[3] = led_out3;
+assign led[4] = led_out4;
+assign led[5] = led_out5;
 
 // ============================================================================
 // HDMI Display & Camera downsampler
@@ -667,7 +648,7 @@ assign led[5] = button ? led_out5 : ~led_index[5];
 // 320x200 = 64,000 pixels, 4 bits per pixel
 reg [3:0] frame_ram [0:63999];
 
-wire test_mode = 1'b0;
+wire test_mode = display_mode;
 
 
 
@@ -676,7 +657,7 @@ wire test_mode = 1'b0;
 // We crop to the first 1280 pixels (320 BRAM cols) and pack rows with stride=320.
 // The remaining ~104 pixels per line are ignored (pixel_cnt keeps running but wr_en=0).
 // Row address = line_cnt[9:2] * 320 = (line_cnt[9:2]<<8) + (line_cnt[9:2]<<6)  [shift-add, no multiplier]
-wire wr_en = synced && (pixel_cnt[1:0] == 2'b00) && (line_cnt[1:0] == 2'b00)
+wire wr_en = synced && href_r && (pixel_cnt[1:0] == 2'b00) && (line_cnt[1:0] == 2'b00)
              && (line_cnt < 560) && (pixel_cnt < 1280);
 wire [15:0] wr_addr = {line_cnt[9:2], 8'b0} + {line_cnt[9:2], 6'b0} + pixel_cnt[11:2];
 wire [3:0]  wr_data = data_r[7:4];

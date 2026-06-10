@@ -68,6 +68,37 @@ module cam_display (
     reg [9:0] hcursor_q;
     reg [9:0] vcursor_q;
 
+    // Resource-friendly division by 3: (max_pixel_cnt * 341) >> 10
+    wire [21:0] pclk_mult = {10'd0, max_pixel_cnt} * 12'd341;
+    wire [9:0] pclk_scaled = pclk_mult[19:10];
+    
+    // Division by 2 for line count
+    wire [9:0] line_scaled = max_line_cnt[9:1];
+
+    // Debug screen color generation
+    wire is_pclk_bar  = (vcursor_q >= 10'd150 && vcursor_q < 10'd200) && (hcursor_q < pclk_scaled);
+    wire is_line_bar  = (vcursor_q >= 10'd270 && vcursor_q < 10'd320) && (hcursor_q < line_scaled);
+    
+    // Scale tick lines (vertical dashed lines)
+    // PCLK axis ticks at 958 (x=319), 1280 (x=426), 1384 (x=460)
+    wire is_tick_958  = (hcursor_q == 10'd319) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
+    wire is_tick_1280 = (hcursor_q == 10'd426) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
+    wire is_tick_1384 = (hcursor_q == 10'd460) && (vcursor_q >= 10'd130 && vcursor_q < 10'd220) && (vcursor_q[2] == 1'b0);
+    
+    // Line axis ticks at 400 (x=200), 800 (x=400)
+    wire is_tick_400  = (hcursor_q == 10'd200) && (vcursor_q >= 10'd250 && vcursor_q < 10'd340) && (vcursor_q[2] == 1'b0);
+    wire is_tick_800  = (hcursor_q == 10'd400) && (vcursor_q >= 10'd250 && vcursor_q < 10'd340) && (vcursor_q[2] == 1'b0);
+    
+    // Color mapping corrected for BGR24 format: {B[7:0], G[7:0], R[7:0]}
+    wire [23:0] debug_pixel = is_pclk_bar  ? 24'h00FF00 : // Green bar (B=00, G=FF, R=00)
+                              is_line_bar  ? 24'hFFFF00 : // Cyan bar (B=FF, G=FF, R=00)
+                              is_tick_958  ? 24'h0080FF : // Orange tick (B=00, G=80, R=FF)
+                              is_tick_1280 ? 24'h0000FF : // Red tick (B=00, G=00, R=FF)
+                              is_tick_1384 ? 24'hFF00FF : // Magenta tick (B=FF, G=00, R=FF)
+                              is_tick_400  ? 24'h00FFFF : // Yellow tick (B=00, G=FF, R=FF)
+                              is_tick_800  ? 24'hFF00FF : // Magenta tick (B=FF, G=00, R=FF)
+                                             24'h2D1E14;  // Slate blue background (B=45, G=30, R=20)
+
     always @(posedge clk or negedge resetn) begin
         if (!resetn) begin
             hcursor <= 10'd0;
@@ -91,7 +122,9 @@ module cam_display (
 
             out_axis_tvalid <= 1'b1;
             
-            if (active_q) begin
+            if (test_mode) begin
+                out_axis_tdata <= debug_pixel;
+            end else if (active_q) begin
                 // Map 4-bit BRAM grayscale pixel data to 24-bit RGB (R=G=B)
                 out_axis_tdata <= { {rd_data, rd_data}, {rd_data, rd_data}, {rd_data, rd_data} };
             end else begin
