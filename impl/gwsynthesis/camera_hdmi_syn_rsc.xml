@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Module name="top" Register="788" Alu="192" Lut="1370" Bsram="6" Ssram="128" T_Register="1203(788)" T_Alu="326(192)" T_Lut="2051(1370)" T_MULT18X18="1(0)" T_Bsram="6(6)" T_Ssram="144(128)">
+<Module name="top" Register="797" Alu="189" Lut="1713" Bsram="10" Ssram="256" T_Register="1232(797)" T_Alu="323(189)" T_Lut="2391(1713)" T_MULT18X18="1(0)" T_Bsram="10(10)" T_Ssram="269(256)">
  <SubModule name="u_pll"/>
  <SubModule name="u_div_5"/>
  <SubModule name="u_Reset_Sync" Register="4" Alu="4" Lut="2" T_Register="4(4)" T_Alu="4(4)" T_Lut="2(2)"/>
- <SubModule name="svo_hdmi_inst" Register="4" Lut="1" T_Register="411(4)" T_Alu="130(0)" T_Lut="679(1)" T_MULT18X18="1(0)" T_Ssram="16(0)">
-  <SubModule name="cam_display_inst" Register="67" Alu="19" Lut="117" MULT18X18="1" T_Register="67(67)" T_Alu="19(19)" T_Lut="117(117)" T_MULT18X18="1(1)"/>
+ <SubModule name="svo_hdmi_inst" Register="4" Lut="1" T_Register="431(4)" T_Alu="130(0)" T_Lut="676(1)" T_MULT18X18="1(0)" T_Ssram="13(0)">
+  <SubModule name="cam_display_inst" Register="67" Alu="19" Lut="113" MULT18X18="1" T_Register="67(67)" T_Alu="19(19)" T_Lut="113(113)" T_MULT18X18="1(1)"/>
   <SubModule name="svo_enc" Register="285" Alu="6" Lut="251" Ssram="7" T_Register="285(285)" T_Alu="6(6)" T_Lut="251(251)" T_Ssram="7(7)"/>
-  <SubModule name="svo_tmds_0" Register="18" Alu="35" Lut="108" Ssram="3" T_Register="18(18)" T_Alu="35(35)" T_Lut="108(108)" T_Ssram="3(3)"/>
-  <SubModule name="svo_tmds_1" Register="18" Alu="35" Lut="103" Ssram="3" T_Register="18(18)" T_Alu="35(35)" T_Lut="103(103)" T_Ssram="3(3)"/>
+  <SubModule name="svo_tmds_0" Register="38" Alu="35" Lut="110" T_Register="38(38)" T_Alu="35(35)" T_Lut="110(110)"/>
+  <SubModule name="svo_tmds_1" Register="18" Alu="35" Lut="102" Ssram="3" T_Register="18(18)" T_Alu="35(35)" T_Lut="102(102)" T_Ssram="3(3)"/>
   <SubModule name="svo_tmds_2" Register="19" Alu="35" Lut="99" Ssram="3" T_Register="19(19)" T_Alu="35(35)" T_Lut="99(99)" T_Ssram="3(3)"/>
  </SubModule>
 </Module>

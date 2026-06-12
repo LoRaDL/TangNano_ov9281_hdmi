@@ -238,10 +238,10 @@ always @(*) begin
             next_write_lsb  = 8'h21;
             next_write_data = 8'h01;
         end
-        5'd23: begin // Write 0x00 to 0x5E00 (Disable Test Pattern Bar)
+        5'd23: begin // Write 0x80 to 0x5E00 (Enable Test Pattern Bar)
             next_write_msb  = 8'h5E;
             next_write_lsb  = 8'h00;
-            next_write_data = 8'h00;
+            next_write_data = 8'h80;
         end
         5'd24: begin // Write 0x03 to 0x3503 (Enable Manual AEC/AGC)
             next_write_msb  = 8'h35;
@@ -893,7 +893,7 @@ always @(posedge clk_out or negedge sys_rst_n) begin
     end
 end
 
-localparam FRAME_OFFSET = 21'd64000;
+localparam FRAME_OFFSET = 21'd256000; // 640x400 bytes per frame
 
 wire [20:0] wr_base_addr = (wr_frame_clkout_1 == 2'd0) ? 21'd0 :
                            (wr_frame_clkout_1 == 2'd1) ? FRAME_OFFSET :
@@ -904,61 +904,82 @@ wire [20:0] rd_base_addr = (rd_frame_clkout_1 == 2'd0) ? 21'd0 :
                                                          (FRAME_OFFSET << 1);
 
 // 4. Mixed-width Line Buffers (using 4 parallel banks to map cleanly to Block RAM)
-reg [7:0] bank_wr0 [0:79];
-reg [7:0] bank_wr1 [0:79];
-reg [7:0] bank_wr2 [0:79];
-reg [7:0] bank_wr3 [0:79];
+// 640 bytes per line / 4 banks = 160 entries per bank.
+// Write buffers are ping-pong (A/B) so consecutive camera lines don't race the PSRAM flush.
+reg [7:0] bank_wr0_a [0:159];
+reg [7:0] bank_wr1_a [0:159];
+reg [7:0] bank_wr2_a [0:159];
+reg [7:0] bank_wr3_a [0:159];
 
-reg [7:0] bank_rd0_a [0:79];
-reg [7:0] bank_rd1_a [0:79];
-reg [7:0] bank_rd2_a [0:79];
-reg [7:0] bank_rd3_a [0:79];
+reg [7:0] bank_wr0_b [0:159];
+reg [7:0] bank_wr1_b [0:159];
+reg [7:0] bank_wr2_b [0:159];
+reg [7:0] bank_wr3_b [0:159];
 
-reg [7:0] bank_rd0_b [0:79];
-reg [7:0] bank_rd1_b [0:79];
-reg [7:0] bank_rd2_b [0:79];
-reg [7:0] bank_rd3_b [0:79];
+reg [7:0] bank_rd0_a [0:159];
+reg [7:0] bank_rd1_a [0:159];
+reg [7:0] bank_rd2_a [0:159];
+reg [7:0] bank_rd3_a [0:159];
+
+reg [7:0] bank_rd0_b [0:159];
+reg [7:0] bank_rd1_b [0:159];
+reg [7:0] bank_rd2_b [0:159];
+reg [7:0] bank_rd3_b [0:159];
 
 // Write Line Logic (camera clock domain: cam_pclk)
-// Downsample 640x400 camera output by 2x in both directions to get 320x200 8-bit pixels
-wire wr_en = synced && href_r && (pixel_cnt[0] == 1'b0) && (line_cnt[0] == 1'b0)
-             && (line_cnt < 400) && (pixel_cnt < 640);
+// Capture full 640x400 (no decimation). OV9281 is monochrome RAW8: 1 byte per pixel.
+wire wr_en = synced && href_r && (line_cnt < 400) && (pixel_cnt < 640);
 
-wire [8:0] cam_pixel_idx = pixel_cnt[11:1];
-wire [6:0] cam_bank_addr = cam_pixel_idx[8:2];
+wire [9:0] cam_pixel_idx = pixel_cnt[9:0];    // 0..639 pixel index
+wire [7:0] cam_bank_addr = cam_pixel_idx[9:2];
 wire [1:0] cam_bank_sel  = cam_pixel_idx[1:0];
+
+// Ping-pong select: even camera lines -> A, odd -> B
+wire cam_wr_sel = line_cnt[0];
 
 always @(posedge cam_pclk) begin
     if (wr_en) begin
-        case (cam_bank_sel)
-            2'd0: bank_wr0[cam_bank_addr] <= data_r;
-            2'd1: bank_wr1[cam_bank_addr] <= data_r;
-            2'd2: bank_wr2[cam_bank_addr] <= data_r;
-            2'd3: bank_wr3[cam_bank_addr] <= data_r;
-        endcase
+        if (cam_wr_sel) begin
+            case (cam_bank_sel)
+                2'd0: bank_wr0_b[cam_bank_addr] <= data_r;
+                2'd1: bank_wr1_b[cam_bank_addr] <= data_r;
+                2'd2: bank_wr2_b[cam_bank_addr] <= data_r;
+                2'd3: bank_wr3_b[cam_bank_addr] <= data_r;
+            endcase
+        end else begin
+            case (cam_bank_sel)
+                2'd0: bank_wr0_a[cam_bank_addr] <= data_r;
+                2'd1: bank_wr1_a[cam_bank_addr] <= data_r;
+                2'd2: bank_wr2_a[cam_bank_addr] <= data_r;
+                2'd3: bank_wr3_a[cam_bank_addr] <= data_r;
+            endcase
+        end
     end
 end
 
 // Write CDC Handshake
 reg line_wr_req = 1'b0;
-reg [7:0] wr_line_num = 8'd0;
+reg [8:0] wr_line_num = 9'd0;
+reg wr_buf_sel = 1'b0;
 reg line_wr_ack_sync_0, line_wr_ack_sync_1;
 
 always @(negedge cam_pclk or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
         line_wr_req <= 1'b0;
-        wr_line_num <= 8'd0;
+        wr_line_num <= 9'd0;
+        wr_buf_sel <= 1'b0;
         line_wr_ack_sync_0 <= 1'b0;
         line_wr_ack_sync_1 <= 1'b0;
     end else begin
         line_wr_ack_sync_0 <= line_wr_ack;
         line_wr_ack_sync_1 <= line_wr_ack_sync_0;
-        
+
         if (!line_wr_req) begin
-            // Trigger write at the end of an active even camera row
-            if (href_prev && !href_r && (line_cnt[0] == 1'b0) && (line_cnt < 400)) begin
+            // Trigger write at the end of every active camera row
+            if (href_prev && !href_r && (line_cnt < 400)) begin
                 line_wr_req <= 1'b1;
-                wr_line_num <= line_cnt[9:1];
+                wr_line_num <= line_cnt[8:0];
+                wr_buf_sel  <= line_cnt[0]; // which ping-pong buffer holds this line
             end
         end else begin
             if (line_wr_ack_sync_1) begin
@@ -983,23 +1004,26 @@ end
 wire line_done = (hcursor_r == 10'd639 && hcursor_out == 10'd0);
 
 reg line_rd_req = 1'b0;
-reg [7:0] rd_line_num = 8'd0;
+reg [8:0] rd_line_num = 9'd0;
 reg line_rd_ack_sync_0, line_rd_ack_sync_1;
 
 always @(posedge clk_pixel or negedge sys_resetn) begin
     if (!sys_resetn) begin
         line_rd_req <= 1'b0;
-        rd_line_num <= 8'd0;
+        rd_line_num <= 9'd0;
         line_rd_ack_sync_0 <= 1'b0;
         line_rd_ack_sync_1 <= 1'b0;
     end else begin
         line_rd_ack_sync_0 <= line_rd_ack;
         line_rd_ack_sync_1 <= line_rd_ack_sync_0;
-        
+
         if (!line_rd_req) begin
-            if (line_done && (vcursor_out >= 10'd38) && (vcursor_out <= 10'd436) && (vcursor_out[0] == 1'b0)) begin
+            // Prefetch each camera line one HDMI line ahead (1:1 mapping).
+            // While scanning line at vcursor, fetch camera line (vcursor+1-40)
+            // displayed next. Active camera lines 0..399 map to HDMI lines 40..439.
+            if (line_done && (vcursor_out >= 10'd39) && (vcursor_out <= 10'd438)) begin
                 line_rd_req <= 1'b1;
-                rd_line_num <= (vcursor_out - 10'd38) >> 1;
+                rd_line_num <= (vcursor_out + 10'd1 - 10'd40);
             end
         end else begin
             if (line_rd_ack_sync_1) begin
@@ -1009,28 +1033,28 @@ always @(posedge clk_pixel or negedge sys_resetn) begin
     end
 end
 
-// Line buffer read index calculation for HDMI display
+// Line buffer read index calculation for HDMI display (1:1, no upscale)
 wire [9:0] next_hcursor = (hcursor_out == 10'd639) ? 10'd0 : (hcursor_out + 10'd1);
 wire [9:0] next_vcursor_for_rd = (hcursor_out == 10'd639) ? ((vcursor_out == 10'd479) ? 10'd0 : (vcursor_out + 10'd1)) : vcursor_out;
-wire [8:0] rd_buf_addr = next_hcursor[9:1];
-wire [8:0] rd_line_idx_for_buf = (next_vcursor_for_rd - 10'd40) >> 1;
+wire [9:0] rd_buf_addr = next_hcursor;                       // full 640-pixel byte index
+wire [9:0] rd_line_idx_for_buf = next_vcursor_for_rd - 10'd40; // camera line currently displayed
 wire rd_buf_sel = rd_line_idx_for_buf[0];
 reg [7:0] rd_data; // 8-bit read data fed to svo_hdmi_inst
 
 always @(posedge clk_pixel) begin
     if (rd_buf_sel) begin
         case (rd_buf_addr[1:0])
-            2'd0: rd_data <= bank_rd0_b[rd_buf_addr[8:2]];
-            2'd1: rd_data <= bank_rd1_b[rd_buf_addr[8:2]];
-            2'd2: rd_data <= bank_rd2_b[rd_buf_addr[8:2]];
-            2'd3: rd_data <= bank_rd3_b[rd_buf_addr[8:2]];
+            2'd0: rd_data <= bank_rd0_b[rd_buf_addr[9:2]];
+            2'd1: rd_data <= bank_rd1_b[rd_buf_addr[9:2]];
+            2'd2: rd_data <= bank_rd2_b[rd_buf_addr[9:2]];
+            2'd3: rd_data <= bank_rd3_b[rd_buf_addr[9:2]];
         endcase
     end else begin
         case (rd_buf_addr[1:0])
-            2'd0: rd_data <= bank_rd0_a[rd_buf_addr[8:2]];
-            2'd1: rd_data <= bank_rd1_a[rd_buf_addr[8:2]];
-            2'd2: rd_data <= bank_rd2_a[rd_buf_addr[8:2]];
-            2'd3: rd_data <= bank_rd3_a[rd_buf_addr[8:2]];
+            2'd0: rd_data <= bank_rd0_a[rd_buf_addr[9:2]];
+            2'd1: rd_data <= bank_rd1_a[rd_buf_addr[9:2]];
+            2'd2: rd_data <= bank_rd2_a[rd_buf_addr[9:2]];
+            2'd3: rd_data <= bank_rd3_a[rd_buf_addr[9:2]];
         endcase
     end
 end
@@ -1038,18 +1062,17 @@ end
 // 6. PSRAM Arbiter State Machine (clk_out domain: 83.25 MHz)
 reg line_wr_req_sync_0, line_wr_req_sync_1;
 reg line_rd_req_sync_0, line_rd_req_sync_1;
-reg [7:0] wr_line_num_clkout;
-reg [7:0] rd_line_num_clkout;
-reg [7:0] rd_line_num_latch;
-
+reg [8:0] wr_line_num_clkout;
+reg [8:0] rd_line_num_clkout;
+reg [8:0] rd_line_num_latch;
 always @(posedge clk_out or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
         line_wr_req_sync_0 <= 1'b0;
         line_wr_req_sync_1 <= 1'b0;
         line_rd_req_sync_0 <= 1'b0;
         line_rd_req_sync_1 <= 1'b0;
-        wr_line_num_clkout <= 8'd0;
-        rd_line_num_clkout <= 8'd0;
+        wr_line_num_clkout <= 9'd0;
+        rd_line_num_clkout <= 9'd0;
     end else begin
         line_wr_req_sync_0 <= line_wr_req;
         line_wr_req_sync_1 <= line_wr_req_sync_0;
@@ -1070,10 +1093,10 @@ localparam S_WRITE_WAIT = 3'd6;
 localparam S_WRITE_DONE = 3'd7;
 
 reg [2:0] pstate = S_IDLE;
-reg [3:0] burst_num = 4'd0;
+reg [4:0] burst_num = 5'd0;     // 0..19 (20 bursts of 8 words = 160 words = 640 bytes)
 reg [4:0] cmd_timer = 5'd0;
 reg [2:0] write_beat_cnt = 3'd0;
-reg [6:0] wr_ptr = 7'd0;
+reg [7:0] wr_ptr = 8'd0;        // 0..159 read-data word pointer
 
 reg line_wr_ack = 1'b0;
 reg line_rd_ack = 1'b0;
@@ -1086,43 +1109,54 @@ assign psram_cmd_en = psram_cmd_en_r;
 assign psram_cmd    = psram_cmd_r;
 assign psram_addr   = psram_addr_r;
 
-// Combinational pipeline address for reading from bank_wr
-reg [6:0] wr_bank_rd_addr;
+// Combinational pipeline address for reading from bank_wr (word index 0..159)
+reg [7:0] wr_bank_rd_addr;
 always @(*) begin
     if (pstate == S_IDLE) begin
-        wr_bank_rd_addr = 7'd0; // pre-fetch first word of burst 0
+        wr_bank_rd_addr = 8'd0; // pre-fetch first word of burst 0
     end else if (pstate == S_WRITE_CMD) begin
         wr_bank_rd_addr = {burst_num, 3'd0}; // first captured beat must be word0 (addr leads data by 1 clk_out)
     end else if (pstate == S_WRITE_DATA) begin
         if (write_beat_cnt < 3'd7)
-            wr_bank_rd_addr = {burst_num, 3'd0} + {4'd0, write_beat_cnt} + 7'd1;
+            wr_bank_rd_addr = {burst_num, 3'd0} + {5'd0, write_beat_cnt} + 8'd1;
         else // write_beat_cnt == 7
-            wr_bank_rd_addr = {burst_num + 4'd1, 3'd0}; // pre-fetch first word of next burst
+            wr_bank_rd_addr = {(burst_num + 5'd1), 3'd0}; // pre-fetch first word of next burst
     end else begin
-        wr_bank_rd_addr = 7'd0;
+        wr_bank_rd_addr = 8'd0;
     end
 end
 
-// Register the bank_wr read data in clk_out domain
+// Register the bank_wr read data in clk_out domain.
+// wr_line_num_clkout[0] selects which ping-pong write buffer holds the line being flushed.
+// Using wr_line_num_clkout[0] avoids a separate CDC path for wr_buf_sel that could skew.
 reg [31:0] psram_wr_data_r = 32'd0;
 assign psram_wr_data = psram_wr_data_r;
 
 always @(posedge clk_out) begin
-    psram_wr_data_r <= {
-        bank_wr3[wr_bank_rd_addr],
-        bank_wr2[wr_bank_rd_addr],
-        bank_wr1[wr_bank_rd_addr],
-        bank_wr0[wr_bank_rd_addr]
-    };
+    if (wr_line_num_clkout[0]) begin
+        psram_wr_data_r <= {
+            bank_wr3_b[wr_bank_rd_addr],
+            bank_wr2_b[wr_bank_rd_addr],
+            bank_wr1_b[wr_bank_rd_addr],
+            bank_wr0_b[wr_bank_rd_addr]
+        };
+    end else begin
+        psram_wr_data_r <= {
+            bank_wr3_a[wr_bank_rd_addr],
+            bank_wr2_a[wr_bank_rd_addr],
+            bank_wr1_a[wr_bank_rd_addr],
+            bank_wr0_a[wr_bank_rd_addr]
+        };
+    end
 end
 
 always @(posedge clk_out or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
         pstate <= S_IDLE;
-        burst_num <= 4'd0;
+        burst_num <= 5'd0;
         cmd_timer <= 5'd0;
         write_beat_cnt <= 3'd0;
-        rd_line_num_latch <= 8'd0;
+        rd_line_num_latch <= 9'd0;
         line_wr_ack <= 1'b0;
         line_rd_ack <= 1'b0;
         psram_cmd_en_r <= 1'b0;
@@ -1131,7 +1165,7 @@ always @(posedge clk_out or negedge sys_rst_n) begin
     end else begin
         case (pstate)
             S_IDLE: begin
-                burst_num <= 4'd0;
+                burst_num <= 5'd0;
                 cmd_timer <= 5'd0;
                 write_beat_cnt <= 3'd0;
                 psram_cmd_en_r <= 1'b0;
@@ -1156,29 +1190,29 @@ always @(posedge clk_out or negedge sys_rst_n) begin
             S_READ_CMD: begin
                 psram_cmd_en_r <= 1'b1;
                 psram_cmd_r <= 1'b0; // Read command
-                if (burst_num == 4'd0)
+                if (burst_num == 5'd0)
                     rd_line_num_latch <= rd_line_num_clkout;
-                psram_addr_r <= rd_base_addr + {rd_line_num_clkout, 8'b0} + {rd_line_num_clkout, 6'b0} + {burst_num, 5'b0};
+                psram_addr_r <= rd_base_addr + {rd_line_num_clkout, 9'b0} + {rd_line_num_clkout, 7'b0} + {burst_num, 5'b0};
                 cmd_timer <= 5'd0;
                 pstate <= S_READ_WAIT;
             end
-            
+
             S_READ_WAIT: begin
                 psram_cmd_en_r <= 1'b0;
                 cmd_timer <= cmd_timer + 5'd1;
-                
+
                 if (cmd_timer >= 5'd31) begin
-                    if (burst_num < 4'd9) begin
-                        burst_num <= burst_num + 4'd1;
+                    if (burst_num < 5'd19) begin
+                        burst_num <= burst_num + 5'd1;
                         pstate <= S_READ_CMD;
                     end else begin
                         pstate <= S_READ_DONE;
                     end
                 end
             end
-            
+
             S_READ_DONE: begin
-                if (wr_ptr == 7'd80) begin
+                if (wr_ptr == 8'd160) begin
                     line_rd_ack <= 1'b1;
                     if (!line_rd_req_sync_1) begin
                         line_rd_ack <= 1'b0;
@@ -1190,7 +1224,7 @@ always @(posedge clk_out or negedge sys_rst_n) begin
             S_WRITE_CMD: begin
                 psram_cmd_en_r <= 1'b1;
                 psram_cmd_r <= 1'b1; // Write command
-                psram_addr_r <= wr_base_addr + {wr_line_num_clkout, 8'b0} + {wr_line_num_clkout, 6'b0} + {burst_num, 5'b0};
+                psram_addr_r <= wr_base_addr + {wr_line_num_clkout, 9'b0} + {wr_line_num_clkout, 7'b0} + {burst_num, 5'b0};
                 cmd_timer <= 5'd0;
                 write_beat_cnt <= 3'd0;
                 pstate <= S_WRITE_DATA;
@@ -1208,10 +1242,10 @@ always @(posedge clk_out or negedge sys_rst_n) begin
             
             S_WRITE_WAIT: begin
                 cmd_timer <= cmd_timer + 5'd1;
-                
+
                 if (cmd_timer >= 5'd31) begin
-                    if (burst_num < 4'd9) begin
-                        burst_num <= burst_num + 4'd1;
+                    if (burst_num < 5'd19) begin
+                        burst_num <= burst_num + 5'd1;
                         pstate <= S_WRITE_CMD;
                     end else begin
                         pstate <= S_WRITE_DONE;
@@ -1236,28 +1270,28 @@ end
 always @(posedge clk_out) begin
     if (psram_rd_data_valid) begin
         if (rd_line_num_latch[0]) begin
-            bank_rd0_b[wr_ptr[6:0]] <= psram_rd_data[7:0];
-            bank_rd1_b[wr_ptr[6:0]] <= psram_rd_data[15:8];
-            bank_rd2_b[wr_ptr[6:0]] <= psram_rd_data[23:16];
-            bank_rd3_b[wr_ptr[6:0]] <= psram_rd_data[31:24];
+            bank_rd0_b[wr_ptr] <= psram_rd_data[7:0];
+            bank_rd1_b[wr_ptr] <= psram_rd_data[15:8];
+            bank_rd2_b[wr_ptr] <= psram_rd_data[23:16];
+            bank_rd3_b[wr_ptr] <= psram_rd_data[31:24];
         end else begin
-            bank_rd0_a[wr_ptr[6:0]] <= psram_rd_data[7:0];
-            bank_rd1_a[wr_ptr[6:0]] <= psram_rd_data[15:8];
-            bank_rd2_a[wr_ptr[6:0]] <= psram_rd_data[23:16];
-            bank_rd3_a[wr_ptr[6:0]] <= psram_rd_data[31:24];
+            bank_rd0_a[wr_ptr] <= psram_rd_data[7:0];
+            bank_rd1_a[wr_ptr] <= psram_rd_data[15:8];
+            bank_rd2_a[wr_ptr] <= psram_rd_data[23:16];
+            bank_rd3_a[wr_ptr] <= psram_rd_data[31:24];
         end
     end
 end
 
 always @(posedge clk_out or negedge sys_rst_n) begin
     if (!sys_rst_n) begin
-        wr_ptr <= 7'd0;
+        wr_ptr <= 8'd0;
     end else begin
         if (psram_rd_data_valid) begin
-            wr_ptr <= wr_ptr + 7'd1;
+            wr_ptr <= wr_ptr + 8'd1;
         end
         if (pstate == S_IDLE) begin
-            wr_ptr <= 7'd0;
+            wr_ptr <= 8'd0;
         end
     end
 end

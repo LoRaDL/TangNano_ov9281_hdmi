@@ -12,27 +12,27 @@
   <Part Number>: GW1NR-LV9QN88PC6/I5
   <Device>: GW1NR-9
   <Device Version>: C
-  <Created Time>:Wed Jun 10 22:15:28 2026
+  <Created Time>:Thu Jun 11 00:41:20 2026
 
 
 2. PnR Details
 
   Running placement:
-    Placement Phase 0: CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
-    Placement Phase 1: CPU time = 0h 0m 0.124s, Elapsed time = 0h 0m 0.122s
+    Placement Phase 0: CPU time = 0h 0m 3s, Elapsed time = 0h 0m 3s
+    Placement Phase 1: CPU time = 0h 0m 0.188s, Elapsed time = 0h 0m 0.186s
     Placement Phase 2: CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
     Placement Phase 3: CPU time = 0h 0m 4s, Elapsed time = 0h 0m 4s
-    Total Placement: CPU time = 0h 0m 8s, Elapsed time = 0h 0m 8s
+    Total Placement: CPU time = 0h 0m 9s, Elapsed time = 0h 0m 9s
  Running routing:
-    Routing Phase 0: CPU time = 0h 0m 0.002s, Elapsed time = 0h 0m 0.002s
+    Routing Phase 0: CPU time = 0h 0m 0.003s, Elapsed time = 0h 0m 0.003s
     Routing Phase 1: CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
-    Routing Phase 2: CPU time = 0h 0m 15s, Elapsed time = 0h 0m 15s
+    Routing Phase 2: CPU time = 0h 1m 1s, Elapsed time = 0h 1m 0s
     Routing Phase 3: CPU time = 0h 0m 0s, Elapsed time = 0h 0m 0s
-    Total Routing: CPU time = 0h 0m 17s, Elapsed time = 0h 0m 17s
+    Total Routing: CPU time = 0h 1m 2s, Elapsed time = 0h 1m 2s
  Generate output files:
-    CPU time = 0h 0m 2s, Elapsed time = 0h 0m 2s
+    CPU time = 0h 0m 1s, Elapsed time = 0h 0m 1s
 
- Total Time and Memory Usage: CPU time = 0h 0m 27s, Elapsed time = 0h 0m 27s, Peak memory usage = 622MB
+ Total Time and Memory Usage: CPU time = 0h 1m 12s, Elapsed time = 0h 1m 12s, Peak memory usage = 621MB
 
 
 3. Resource Usage Summary
@@ -40,15 +40,15 @@
   --------------------------------------------------------------------------------
   Resources                   | Usage                               | Utilization
   --------------------------------------------------------------------------------
-  Logic                       | 3300/8640                           |  39%
-    --LUT,ALU,ROM16           | 2436(2048 LUT, 388 ALU, 0 ROM16)    | -
-    --SSRAM(RAM16)            | 144                                 | -
-  Register                    | 1203/6732                           |  18%
+  Logic                       | 4385/8640                           |  51%
+    --LUT,ALU,ROM16           | 2771(2388 LUT, 383 ALU, 0 ROM16)    | -
+    --SSRAM(RAM16)            | 269                                 | -
+  Register                    | 1232/6732                           |  19%
     --Logic Register as Latch | 0/6480                              |  0%
-    --Logic Register as FF    | 1189/6480                           |  19%
+    --Logic Register as FF    | 1218/6480                           |  19%
     --I/O Register as Latch   | 0/252                               |  0%
     --I/O Register as FF      | 14/252                              |  6%
-  CLS                         | 2105/4320                           |  49%
+  CLS                         | 2623/4320                           |  61%
   I/O Port                    | 33/71                               |  47%
   I/O Buf                     | 29                                  | -
     --Input Buf               | 14                                  | -
@@ -59,8 +59,8 @@
     --OSER4                   | 12
     --OSER10                  | 3
     --IODELAY                 | 10
-  BSRAM                       | 6/26                                | 24%
-    --SDPB                    | 5
+  BSRAM                       | 10/26                               | 39%
+    --SDPB                    | 9
     --SDPX9B                  | 1
   DSP                         | 0.5/10                              | 5%
     --MULT18X18               | 1
@@ -100,11 +100,11 @@
   Signal         | Global Clock   | Location
   -------------------------------------------
   sys_clk_d      | PRIMARY        |  TR TL BR BL
-  cam_pclk_d     | PRIMARY        |  TR TL BR BL
-  vsync_r        | PRIMARY        |  TR TL BL
+  cam_pclk_d     | PRIMARY        |  TR BR BL
+  vsync_r        | PRIMARY        |  TR TL BR BL
   clk_out        | PRIMARY        |  TR TL BR BL
   clk_pixel      | PRIMARY        |  TR TL BR BL
-  n1871_7        | LW             |  -
+  n1894_7        | LW             |  -
   n559_6         | LW             |  -
   psram_inst/u_psram_top/ddr_rsti| LW             |  -
   svo_hdmi_inst/n142_5| LW             |  -
