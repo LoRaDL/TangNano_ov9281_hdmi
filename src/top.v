@@ -238,10 +238,10 @@ always @(*) begin
             next_write_lsb  = 8'h21;
             next_write_data = 8'h01;
         end
-        5'd23: begin // Write 0x80 to 0x5E00 (Enable Test Pattern Bar)
+        5'd23: begin // Write 0x00 to 0x5E00 (Disable Test Pattern Bar)
             next_write_msb  = 8'h5E;
             next_write_lsb  = 8'h00;
-            next_write_data = 8'h80;
+            next_write_data = 8'h00;
         end
         5'd24: begin // Write 0x03 to 0x3503 (Enable Manual AEC/AGC)
             next_write_msb  = 8'h35;

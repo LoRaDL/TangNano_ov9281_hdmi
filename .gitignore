@@ -1,0 +1,26 @@
+# User Specific Exclusions
+OV9281.pdf
+
+# Gowin FPGA Tool Output & User Configs
+impl/
+*.gprj.user
+.user
+
+# OS-specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backups and temporary files
+*.tmp
+*.bak
+*~
+
+# IDE / Editor configurations
+.vscode/
+.idea/
+.claude/
